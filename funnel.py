@@ -10,7 +10,7 @@ class Funnel(object):
     self.environment = jinja2.Environment(loader=jinja2.FileSystemLoader('templates/flask'))
     self.app_name = company_name.lower().replace(" ", "_")
     self.logo_url = logo_url
-    self.pages = [page.lower() for page in pages]
+    self.pages = [page.lower().replace(" ", "_") for page in pages]
     self.email = email
     self.google_analytics = google_analytics
     response = requests.get(logo_url)
@@ -21,10 +21,10 @@ class Funnel(object):
     # Create app directories
     os.system("mkdir applications/{}".format(self.app_name))
     # Get app template
-    template = self.environment.get_template('app.py')
+    template = self.environment.get_template('app.template')
     # Create app.py
     with open("applications/{}/app.py".format(self.app_name), "w") as f:
-      f.write(template.render(pages=self.pages))
+      f.write(template.render(pages=[page.replace(" ","_") for page in self.pages]))
     # Create template directory.
     os.system("mkdir -p applications/{}/templates".format(self.app_name))
     # Create static directory and copy base javascript.
@@ -37,7 +37,7 @@ class Funnel(object):
     # Create base template
     with open("applications/{}/templates/base.html".format(self.app_name), "w") as f:
       template = self.environment.get_template("templates/base.html")
-      f.write(template.render(logo=self.logo_url, pages=self.pages))
+      f.write(template.render(logo=self.logo_url, pages=self.pages, google_analytics=self.google_analytics))
     # Create page templates
     self.create_page(self.app_name, "home")
     for page in self.pages:

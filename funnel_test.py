@@ -7,9 +7,11 @@ if __name__ == "__main__":
     company_name = "Clearline Industries"
   logo_url = raw_input("Logo url:")
   if len(logo_url) == 0:
-    logo_url = "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png"
+    logo_url = "http://i.imgur.com/wc0nX3r.png"
     #Clearline http://i.imgur.com/wc0nX3r.png
-  pages = ["About", "Services", "Team"]
+  #pages = ["About", "Services", "Team"]
+  page_names = raw_input("Page names separate by comma:")
+  pages = [page.strip() for page in page_names.split(",")]
   email = "junk@data.com"
   google_analytics = "JUNKDATA"
   generator = funnel.Funnel(company_name, logo_url, pages, email, google_analytics)
