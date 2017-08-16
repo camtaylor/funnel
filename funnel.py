@@ -1,13 +1,11 @@
 import os
-import subprocess
+from contextlib import contextmanager
 import jinja2
 from PIL import Image
 from StringIO import StringIO
 import requests
 import shutil
 import json
-import re
-
 
 class Funnel(object):
   """
@@ -26,6 +24,36 @@ class Funnel(object):
       response = requests.get(logo_url)
       self.logo_file = Image.open(StringIO(response.content)).convert('RGB')
       self.colors = self.logo_file.getcolors()
+
+  @contextmanager
+  def cwd(self, path):
+    """
+    Simple context manager to change directories and change back after
+    finishing with command.
+
+    Used as with cwd('/some/directory'):
+    """
+    oldpwd = os.getcwd()
+    os.chdir(path)
+    try:
+      yield
+    finally:
+      os.chdir(oldpwd)
+
+  def app_command(self, command):
+    """
+    Function to execute a system command in the root directory of an application.
+    Enters the app's directory, executes a command, and returns to the previous working
+    directory.
+    :param command: (str) Command to be executed.
+    :return:
+    """
+    with self.cwd("applications/{}".format(self.app_name)):
+      try:
+        os.system(command)
+      except Exception as e:
+        print e
+        print "Could not execute command '" + command + "'"
 
   def generate_app(self):
     # Create app directories
@@ -62,6 +90,10 @@ class Funnel(object):
     for page in self.pages:
       self.create_page(page)
     self.create_page("contact")
+    # Export app.
+    self.export_app()
+    # Setup git
+    self.setup_git()
 
   def export_app(self):
     #Create the funnel json for export
@@ -100,22 +132,38 @@ class Funnel(object):
     """
     os.system("python applications/{}/app.py".format(self.app_name))
 
+  def setup_git(self):
+    """
+    Function to initialize git repo and create master and staging branches.
+    :return:
+    """
+    # Initialize git repo in application directory.
+    self.app_command("git init")
+    # Add files
+    self.app_command("git add -A")
+    # Stage first commit
+    self.app_command("git commit -m \"First commit\"")
+    # Create staging branch locally.
+    self.app_command("git checkout -b staging")
+    # Create master branch locally.
+    self.app_command("git checkout master")
+
   def setup_heroku(self):
     """
+    Using this function requires the heroku cli to be installed.
 
+
+    It sets up a staging and production application.
     :return:
     """
     # Copy files necessary for heroku into application directory.
     shutil.copy2("templates/flask/heroku/Procfile", "applications/{}/".format(self.app_name))
     shutil.copy2("templates/flask/heroku/requirements.txt", "applications/{}/requirements.txt".format(self.app_name))
-    # Initialize git repo in application directory.
-    os.system("git --git-dir applications/{}/.git init".format(self.app_name))
-    working_directory = os.
     try:
-      os.system("heroku create {}-staging".format(
-        self.app_name, self.app_name.replace("_", "-")))
-      os.system("heroku create {}-production".format(
-        self.app_name, self.app_name.replace("_", "-")))
+      self.app_command("heroku create {}-production".format(
+        self.app_name.replace("_", "-")))
+      self.app_command("heroku create {}-staging --remote staging".format(
+        self.app_name.replace("_", "-")))
     except Exception as e:
       print e
       print "Could not create a heroku app. Either an app exists with this name or heroku is not configured."
@@ -125,18 +173,43 @@ class Funnel(object):
     self.production = "https://{}-production.herokuapp.com/".format(self.app_name.replace("_", "-"))
     self.production_repo = "https://git.heroku.com/{}.git".format(self.app_name.replace("_", "-")+"-production")
 
-
-  def stage_app(self):
+  def setup_github(self):
     """
-    Pushes code to heroku staging environment. Or creates one if necessary.
+    Using this functions requires the hub cli git extension by github.
+    Avalaible at https://github.com/github/hub/releases
+
+    The function will create a private github repository for the new app.
     :return:
     """
-    pass
+    # Creates the repo for the app.
+    self.app_command("hub create -p nametailorllc/{}".format(self.app_name))
+    self.app_command("git push origin master")
+    self.app_command("git push origin staging")
 
-  def deploy_app(self, **kwargs):
+
+  def stage_app(self, commit_message=""):
+    """
+    Pushes code to heroku staging environment. Or creates one if necessary.
+    Pushes code to staging branch of github repo.
+    :return:
+    """
+    if len(commit_message) == 0:
+      commit_message = "Staging commit: Uncommented."
+    self.app_command("git add -A")
+    self.app_command("git commit -m \"{}\"".format(commit_message))
+    self.app_command("git push origin staging")
+    self.app_command("git push staging master")
+
+  def deploy_app(self, commit_message=""):
     """
     Pushes code to heroku production environment. Or creates one if necessary.
+    Pushes code to master branch of github repo.
     Function to deploy the flask app to heroku.
     :return:
     """
-    pass
+    if len(commit_message) == 0:
+      commit_message = "Deployment commit: Uncommented."
+    self.app_command("git add -A")
+    self.app_command("git commit -m \"{}\"".format(commit_message))
+    self.app_command("git push origin master")
+    self.app_command("git push heroku master")

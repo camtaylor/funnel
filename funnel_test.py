@@ -17,8 +17,10 @@ if __name__ == "__main__":
   google_analytics = "JUNKDATA"
   generator = funnel.Funnel(app_name, logo_url, pages, email, google_analytics)
   generator.generate_app()
-  generator.setup_heroku()
-  generator.export_app()
+  #generator.setup_heroku()
+  #generator.setup_github()
+  #generator.stage_app("First stage")
+  #generator.deploy_app("First deployment")
   background_server = Thread(target=generator.start_app)
   background_server.start()
   while True:
