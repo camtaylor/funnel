@@ -2,6 +2,7 @@ import funnel
 import json
 import zipfile
 import os
+from distutils.dir_util import copy_tree
 
 def create_app():
   """
@@ -51,37 +52,9 @@ def load_theme(theme_name, funnel_app):
   :param funnel_app:
   :return:
   """
-  #
-  if not os.path.exists('templates/themes/theme_name/'):
-    # Unzip.
-    theme_archive = zipfile.ZipFile('templates/themes/{}.zip'.format(theme_name))
-    theme_archive.extractall(path="templates/themes/")
-  css_files = []
-  js_files = []
-  # Restructure directories.
-  for root, dirs, files in os.walk("templates/themes/{}".format(theme_name)):
-    for file in files:
-      if file.endswith(".css") and "bootstrap" not in file:
-        css_files.append(os.path.join(root, file))
-      elif file.endswith(".js") and "jquery" not in file and "bootstrap" not in file:
-        js_files.append(os.path.join(root, file))
-
-  # Read theme files into strings and write to theme files.
-  css_data = ""
-  for file in css_files:
-    with open(file, 'r') as f:
-      css_data += f.read()
-  js_data = ""
-  for file in js_files:
-    with open(file, 'r') as f:
-      js_data += f.read()
-
-  # Write theme and theme js files.
-  with open("applications/{}/static/css/theme.css".format(funnel_app.app_name), "w") as css_theme:
-    css_theme.writelines(css_data)
-  with open("applications/{}/static/js/theme.js".format(funnel_app.app_name), "w") as js_theme:
-    js_theme.writelines(js_data)
-
+  theme_archive = zipfile.ZipFile('templates/themes/{}.zip'.format(theme_name))
+  if funnel_app and len(funnel_app.app_name) > 0:
+    theme_archive.extractall(path="applications/{}/static/themes/{}".format(funnel_app.app_name,theme_name))
 
 if __name__ == "__main__":
   # TODO write a proper CLI for the admin functions. Create, Load, Edit etc
