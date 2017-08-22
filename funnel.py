@@ -5,6 +5,7 @@ from PIL import Image
 from StringIO import StringIO
 import requests
 import shutil
+import multiprocessing
 import json
 
 class Funnel(object):
@@ -13,8 +14,8 @@ class Funnel(object):
     build websites and push them to heroku. It removes boilerplate setup
     for simple apps.
   """
-  def __init__(self, app_name="", logo_url="", pages="", email="", google_analytics=""):
-    self.environment = jinja2.Environment(loader=jinja2.FileSystemLoader('templates/flask'))
+  def __init__(self, app_name="", logo_url="", pages="", email="", google_analytics="", **kwargs):
+    self.environment = jinja2.Environment(loader=jinja2.FileSystemLoader('templates/'))
     self.app_name = app_name.lower().replace(" ", "_")
     self.logo_url = logo_url
     self.pages = [page.lower().replace(" ", "_") for page in pages if len(page) > 0]
@@ -22,8 +23,11 @@ class Funnel(object):
     self.google_analytics = google_analytics
     if len(logo_url) > 0:
       response = requests.get(logo_url)
-      self.logo_file = Image.open(StringIO(response.content)).convert('RGB')
+      self.logo_file = Image.open(StringIO(response.content))
+      self.logo_file = self.logo_file.convert('RGB')
       self.colors = self.logo_file.getcolors()
+      self.colors = sorted(self.colors)[-1:-6:-1]
+      self.colors = ["#{:02x}{:02x}{:02x}".format(color[1][0],color[1][1],color[1][2]) for color in self.colors]
 
   @contextmanager
   def cwd(self, path):
@@ -40,7 +44,7 @@ class Funnel(object):
     finally:
       os.chdir(oldpwd)
 
-  def app_command(self, command):
+  def app_command(self, command, silence_output=False):
     """
     Function to execute a system command in the root directory of an application.
     Enters the app's directory, executes a command, and returns to the previous working
@@ -50,12 +54,19 @@ class Funnel(object):
     """
     with self.cwd("applications/{}".format(self.app_name)):
       try:
-        os.system(command)
+        if silence_output:
+          os.system(command + " >/dev/null 2>&1")
+        else:
+          os.system(command)
       except Exception as e:
         print e
         print "Could not execute command '" + command + "'"
 
   def generate_app(self):
+    """
+    Function to generate an app. Creates all necessary files and directories.
+    :return:
+    """
     # Create app directories
     directories = [
       "applications/{}".format(self.app_name),
@@ -64,6 +75,7 @@ class Funnel(object):
       "applications/{}/static/js".format(self.app_name),
       "applications/{}/static/img".format(self.app_name),
       "applications/{}/static/css".format(self.app_name),
+      "applications/{}/static/css/fonts".format(self.app_name)
     ]
     for directory in directories:
       if not os.path.exists(directory):
@@ -74,17 +86,23 @@ class Funnel(object):
     if self.logo_file:
       self.logo_file.save("applications/{}/static/img/logo.png".format(self.app_name))
     # Get app template
-    template = self.environment.get_template('app.template')
+    template = self.environment.get_template('flask/app.template')
     # Create app.py
     with open("applications/{}/app.py".format(self.app_name), "w") as f:
       f.write(template.render(pages=[page.replace(" ","_") for page in self.pages]))
     # Copy necessary files into new application
-    shutil.copy2("templates/flask/templates/theme.css", "applications/{}/static/css/theme.css".format(self.app_name))
-    shutil.copy2("templates/flask/templates/theme.js", "applications/{}/static/js/theme.js".format(self.app_name))
-    # Create base template
+    shutil.copy2("templates/css/base.css", "applications/{}/static/css/base.css".format(self.app_name))
+    shutil.copy2("templates/css/base.css", "applications/{}/static/css/theme.css".format(self.app_name))
+    # Create base html
     with open("applications/{}/templates/base.html".format(self.app_name), "w") as f:
-      template = self.environment.get_template("templates/base.html")
-      f.write(template.render(logo=self.logo_url, pages=self.pages, google_analytics=self.google_analytics))
+      template = self.environment.get_template("html/base.html")
+      f.write(template.render(logo=self.logo_url, pages=self.pages))
+    # Create base js
+    with open("applications/{}/static/js/base.js".format(self.app_name), "w") as f:
+      template = self.environment.get_template("js/base.js")
+      f.write(template.render(google_analytics=self.google_analytics))
+    # Create empty theme js
+    open("applications/{}/static/js/theme.js".format(self.app_name), 'a').close()
     # Create page templates
     self.create_page("home")
     for page in self.pages:
@@ -95,21 +113,29 @@ class Funnel(object):
     # Setup git
     self.setup_git()
 
-  def export_app(self):
+  def export_app(self, save_to_file=True):
+    """
+    Function to export instance variables of an app.
+
+    :param save_to_file: (bool) Whether or not to write to funnel.json, default = True
+    :return:
+    """
     #Create the funnel json for export
     unwanted_variables = ["environment", "logo_file"]
     funnel_dict = {el:self.__dict__[el] for el in [key for key in self.__dict__ if key not in unwanted_variables]}
-    with open("applications/{}/funnel.json".format(self.app_name), "w") as f:
-      f.write(json.dumps(funnel_dict))
+    if save_to_file:
+      with open("applications/{}/funnel.json".format(self.app_name), "w") as f:
+        f.write(json.dumps(funnel_dict))
+    return funnel_dict
 
-  def change_css_theme(self, theme_file):
+  def change_css(self, theme_file):
     """
 
     :param theme_file: (str) name of css theme. For example "paper.css"
     :return:
     """
     shutil.copy2(
-      "templates/flask/themes/{}".format(theme_file),
+      "templates/css/{}".format(theme_file),
       "applications/{}/static/css/theme.css".format(self.app_name))
 
   def create_page(self, page):
@@ -122,15 +148,22 @@ class Funnel(object):
     :return:
     """
     shutil.copy2(
-      "templates/flask/templates/page.html",
+      "templates/html/page.html",
       "applications/{}/templates/{}.html".format(self.app_name, page))
 
   def start_app(self):
     """
-    Starts the flask app locally on port 5000.
+    Starts the flask app locally on port 5000. Starts in flask in debug mode.
     :return:
     """
-    os.system("python applications/{}/app.py".format(self.app_name))
+    try:
+      background_server = multiprocessing.Process(target=self.app_command, args=("FLASK_APP=app.py FLASK_DEBUG=1 python -m flask run",))
+      background_server.start()
+      print "* Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)"
+    except Exception as e:
+      print e
+      print "Could not start server."
+    return background_server
 
   def setup_git(self):
     """
